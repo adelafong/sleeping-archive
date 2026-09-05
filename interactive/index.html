@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dreaming Pattern Interactive - Two Hands</title>
+  
+  <!-- p5.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; 
+      padding: 0; 
+      width: 100%; 
+      height: 100%;
+      background-color: #000; 
+      overflow: hidden; 
+      font-family: monospace;
+    }
+    #canvas-container { 
+      width: 100vw; 
+      height: 100vh; 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+    }
+    #webcam-video { display: none; }
+  </style>
+</head>
+<body>
+
+<video id="webcam-video" playsinline muted></video>
+<div id="canvas-container"></div>
+
+<script>
+let COLS, ROWS;
+let cellW, cellH;
+let patternIndex = 0;
+
+// Scene States: INTRO_DREAMING, ASSEMBLING, ACTIVE, DISSOLVING, SWITCHING_PATTERN
+let sceneState = 'INTRO_DREAMING'; 
+let transitionProgress = 0.0;
+let dissolveProgress = 0.0; 
+let patternTransitionProgress = 0.0;
+
+let dreamPieces = [];          
+
+let handAbsentStartTime = 0;
+// Set to 3000ms (3 seconds) to trigger dissolution after 3 seconds of no hand detection
+const NO_HAND_TIMEOUT = 3000;
+let isTimeoutTriggered = false;
+
+let coloredGridArray; 
+
+const PATTERNS = [
+  // Pattern 1
+  [
+    [0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,1,0,0,0,1,0,0,0,1,0,0,1,1,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0],
+    [0,0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,1,1,1,0,0,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0,0,1,0,0,0,1,0,1,0,1,0,1,0,1,0],
+    [0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,1,0,1,1,1,1,1,0,1,1,1,0,1,1,1,1,0,1,1,1,0,1,1,0,0,1,1,0,0,0,1,0,0,0,0,0,0],
+    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,0,1,1,1,1,0,1,1,0,0,1,0,1,1,1,0,1,1,0,1,1,1,0,0,1,1,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,1,1,1,0,0,0,1,0,1,1,1,0,1,1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+    [0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,1,1,0,0,1,0,0,0,0,1,1,0,1,0,1,0,0,0,1,0,1,1,1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+    [0,0,0,0,1,0,0,0,1,0,0,1,0,0,1,1,1,0,0,1,1,0,0,1,1,1,0,1,1,1,0,0,1,1,0,0,1,1,1,0,0,0,1,1,0,0,1,1,0,0,0,0,0,0],
+    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,1,1,0,0,0,1,1,0,1,0,1,1,0,1,0,0,1,1,0,0,0,0,1,1,1,0,1,0,0,0,1,0,1,0,1,0,1,0,1],
+    [0,0,0,0,0,0,0,1,0,0,0,1,0,0,1,0,1,1,1,1,1,0,0,0,1,0,1,1,1,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0],
+    [0,0,0,0,0,1,0,0,1,1,0,0,0,0,1,1,1,0,1,1,0,1,0,0,1,1,1,1,0,0,0,0,5,0,1,0,1,0,1,0,5,0,0,0,1,0,2,0,1,0,0,0,1,0],
+    [1,0,0,0,0,0,0,1,1,1,1,0,0,8,1,2,0,5,1,1,1,0,2,1,0,0,1,1,0,0,0,1,2,0,1,1,1,1,0,1,2,0,1,1,1,1,1,0,1,0,0,0,0,0],
+    [0,0,0,0,0,1,0,0,1,1,0,0,0,8,0,0,0,0,0,1,0,2,0,1,1,1,1,0,1,2,0,1,1,1,0,1,1,0,0,2,0,0,0,1,1,0,0,1,1,0,0,0,1,0],
+    [0,0,0,1,1,0,0,1,1,0,1,1,1,0,0,0,1,0,1,1,0,2,1,0,1,0,0,1,1,1,1,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,1,0,0],
+    [1,1,1,1,1,0,1,1,0,1,1,0,1,1,1,0,0,0,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,0,0,0,0,1,1,1,0,1,1,0,1,0,1,1,1,0,0,1,0],
+    [1,1,1,1,1,0,0,0,1,0,0,0,1,1,0,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,0,0,0,0,0,1,1,0,1,1,1,0],
+    [1,1,1,0,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,0,1,1,1,1,0,1,1,1,0,0,1,1,0,0,0,1,1,1,0,1,1],
+    [0,1,1,1,1,1,1,1,0,1,1,0,1,1,1,0,0,0,0,1,1,1,0,1,1,1,1,1,1,0,1,0,1,0,0,0,1,1,1,0,1,1,0,0,0,0,0,1,1,0,1,1,1,0],
+    [0,0,0,0,1,1,0,1,1,0,1,1,1,0,0,0,0,0,0,0,0,1,1,1,0,1,1,0,1,1,1,1,0,0,0,1,0,0,1,1,1,1,0,1,1,1,0,0,1,1,1,0,0,0],
+    [1,0,0,0,0,0,1,1,0,1,1,1,0,0,1,0,0,0,1,0,0,0,1,1,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0,0],
+    [0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0,1,0,0,0,1],
+    [0,0,0,1,0,0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,0,0,0,0,0,1,1,0,0,0,1,0,0,1,1,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,1,0,0,0,1,0,0,0,0,1,1,0,1,1,0,1,1,0,0,0,1,1,0,1,0,0,0,1,1,0,1,1,0,1,1,0,1,0,0,0,0,0,0,0,1,0,0,0,1,0],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,0,1,1,1,1,0,1,1,1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0],
+    [0,1,0,0,0,1,0,0,0,0,0,0,1,1,0,1,0,0,1,0,1,0,0,1,1,1,1,0,1,0,0,1,0,1,0,0,1,0,1,1,0,0,0,0,0,1,0,0,0,1,0,1,0,0],
+    [0,0,0,1,0,0,0,0,0,0,0,1,0,1,1,0,0,0,0,1,0,0,1,0,1,0,1,1,1,1,0,1,1,1,0,0,1,1,1,0,0,1,1,0,0,0,1,0,0,0,1,0,0,0],
+    [1,0,0,0,1,0,0,0,1,0,0,0,0,0,1,1,1,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,1,0,0,0,0,1,1,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,1,1,1,1,0,1,1,0,1,0,0,0,1,1,0,1,1,0,1,1,1,1,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+    [0,1,0,1,0,0,0,1,0,0,0,1,0,0,0,1,1,0,1,1,0,1,1,1,0,1,0,0,1,1,0,1,1,1,0,1,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0],
+    [0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,1,1,1,0,1,1,1,0,1,1,1,0,0,1,1,1,0,1,1,1,0,0,1,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0],
+    [1,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,1,0,1,1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0],
+    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,1,1,1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,1,1,0,1,1,0,1,1,0,0,1,0,0,1,0,0,1,1,0,1,1,0,1,1,1,0,0,0,0,1,0,0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0]
+  ],
+  // Pattern 2
+  [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1],
+    [0,1,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0],
+    [0,0,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,0,0,0,1,0,0,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,1,0,0,1,1,1,1,1,1,0,0,1,1,1,1,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,1,0,0],
+    [0,0,0,0,1,1,1,0,1,1,0,1,1,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0],
+    [0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,0,0,1,0,1,1,0,0,1,0,1,1,0],
+    [0,1,0,0,0,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0],
+    [0,0,0,0,0,0,1,1,1,1,1,1,0,0,1,0,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,0,1,0,1,1,1,1,0,1,1,1,0,1,1,0,0,1,1,1,1],
+    [1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,0,1,1,0,0],
+    [0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,1,0,0,0,0,0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,0,1,1,0,0,1,1,0,0,1,0,0,1,0,0,0,0],
+    [0,0,0,0,0,1,1,0,0,1,1,1,0,1,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1],
+    [0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,1,1,1,0,1,1,0,1,1,0,0,0,1,0,0,1,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,0,0,0,1,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,0,0,0,1,1,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,1,1,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,0,0,1,1,1,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,0,0,0,1,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,1,0],
+    [0,0,1,0,0,1,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,1,1,0,1,1,0,0,1,0,0,1],
+    [0,0,0,0,0,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,1,1,0,0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,0,0,0,1,1,0,1,1,0,1,1,0,0,1,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,0,1,1,0,1,1,0,0,1,1,0,1,1,0,1,1,1,0,0,0,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1,1,1,0,1,1,0,1,1,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,0,1,0,1,0,0,1,0,0,0,0],
+    [0,1,1,0,0,1,1,1,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,0,0,0],
+    [0,0,0,0,0,0,1,1,1,1,1,0,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,1,1,1,1,1,0,0,1,1,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,1,0,1,0,0,0],
+    [0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0]
+  ],
+  // Pattern 3
+  [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,0,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,1,0,0,0,0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,0,1],
+    [0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,1,1,1,1,0,1,0,1,1,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0],
+    [0,1,1,0,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,1,1,1,1,1,0,1,0,0,0,1,1,0,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,1,1,1,1,1,0,1],
+    [0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,0,1,1,1,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,0,1,1,1,0,0,1,1,0,1,1,1,1,1,1,1,0,0,1,0,0,1,0,1,1,1,1,0,1,1,1,1,0,0,0,1,1,0,1,1,1,0,0,1,1,1,0],
+    [1,1,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,0,1,0,1,0,1,1,0,1,1,0,0,1,1,1,0,1,0,0,1,0,1,0,1,0,1,1,0,1,0,1,0,0,1,0,0,0],
+    [1,1,0,1,0,1,0,1,0,1,1,1,0,0,1,0,1,0,1,0,1,1,1,1,1,0,0,0,1,1,1,1,1,0,1,1,1,0,0,1,0,1,1,0,1,1,1,1,1,1,1,1,0,0],
+    [1,1,1,0,1,0,1,1,1,1,1,1,0,0,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,0,1,1,1,1,1,0,1,1],
+    [1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1],
+    [1,1,1,1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0,1],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,1,1,1],
+    [0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [1,1,1,1,1,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0],
+    [0,1,1,1,1,1,1,0,1,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0,0,1,0,1,1,1,1,1,1,0,1,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0],
+    [1,1,1,1,1,0,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,0,1,1,1,0,0,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,0,1,0,1,0],
+    [1,0,1,1,1,1,1,0,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1],
+    [1,1,1,1,0,1,1,1,1,1,1,0,0,1,0,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,0,1,0,1,1,1,1,1,0,1,1,0],
+    [1,1,0,1,1,1,0,1,1,1,1,0,0,1,1,1,1,1,1,0,1,1,1,1,1,0,0,0,1,0,1,1,1,1,0,1,1,1,1,0,0,1,1,1,1,1,1,0,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,0,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,1,1,1,0,1,1,1,1,1,1,0,0],
+    [0,1,0,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,0,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,0,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0,1,1,1,1,0,1,0,1,1,0,0,0,1,1,1,1,1,1,1,1,0,1,0,0,0],
+    [0,0,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0,0,0,0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,0,1,0,0,0,0,0,0,1,0,1,1,1,1,0,1,0,0,0,1,0,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,1],
+    [0,1,0,0,1,0,0,0,1,0,0,1,0,0,1,0,0,1,0,0,1,0,0,1,1,0,1,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  ],
+  // Pattern 4
+  [
+    [1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1],
+    [1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1],
+    [0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1],
+    [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0],
+    [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1],
+    [0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1],
+    [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0],
+    [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1],
+    [0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1],
+    [1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0],
+    [1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0],
+    [0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0],
+    [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1],
+    [1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1],
+    [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1],
+    [1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1],
+    [1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1],
+    [0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+    [0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0],
+    [0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1],
+    [0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0],
+    [0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1],
+    [0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0],
+    [0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1],
+    [1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1]
+  ]
+];
+
+// Precomputed static values for 4-slice stitch rendering to minimize math inside loop
+const SLICES_DATA = [];
+(function precomputeSlices() {
+  const slices = 4;
+  for (let i = 0; i < slices; i++) {
+    let pct = i / (slices - 1);
+    let sinVal = Math.sin(pct * Math.PI);
+    SLICES_DATA.push({
+      pctY: pct - 0.5,
+      highlight: Math.pow(sinVal, 1.2),
+      wFactor: 0.5 + 0.5 * Math.sqrt(sinVal)
+    });
+  }
+})();
+
+let GRID_PATTERN = []; 
+let stitches = [];
+let rowOffsets = [], targetRowOffsets = [];
+
+let activeHands = [];
+let isHandPresent = false;
+let currentScale = 1.0, targetScale = 1.0;
+
+let isExploded = false;
+let explosionCenterX = 0;
+let explosionCenterY = 0;
+let explosionFactor = 1.0;
+
+let shockwaves = [], sparkParticles = [];
+
+let videoElement, hands, cameraUtils;
+let isProcessingFrame = false;
+
+function setup() {
+  let canvas = createCanvas(windowWidth, windowHeight);
+  canvas.parent('canvas-container');
+  frameRate(60);
+  
+  loadPattern(patternIndex);
+  initDreamingScene();
+  initCustomMediaPipe();
+}
+
+function initDreamingScene() {
+  dreamPieces = [];
+  if (coloredGridArray) coloredGridArray.fill(0);
+
+  let ROWS_TEMP = GRID_PATTERN.length;
+  let COLS_TEMP = GRID_PATTERN[0].length;
+  let cellWTemp = width / COLS_TEMP;
+  let cellHTemp = height / ROWS_TEMP;
+
+  let clusterSize = 4;
+  for (let gr = 0; gr < ROWS_TEMP; gr += clusterSize) {
+    for (let gc = 0; gc < COLS_TEMP; gc += clusterSize) {
+      let clusterCells = [];
+      
+      for (let r = gr; r < Math.min(gr + clusterSize, ROWS_TEMP); r++) {
+        for (let c = gc; c < Math.min(gc + clusterSize, COLS_TEMP); c++) {
+          if (GRID_PATTERN[r][c] === 1) {
+            let tx = c * cellWTemp + cellWTemp / 2;
+            let ty = r * cellHTemp + cellHTemp / 2;
+            clusterCells.push({ r: r, c: c, offsetX: tx, offsetY: ty, isYellow: (r + c) % 2 === 0 });
+          }
+        }
+      }
+
+      if (clusterCells.length > 0) {
+        let sumX = 0, sumY = 0;
+        for (let i = 0; i < clusterCells.length; i++) {
+          sumX += clusterCells[i].offsetX; 
+          sumY += clusterCells[i].offsetY;
+        }
+        let targetCenterX = sumX / clusterCells.length;
+        let targetCenterY = sumY / clusterCells.length;
+
+        let startX, startY;
+        let margin = 150;
+        let edge = floor(random(4));
+        if (edge === 0) {
+          startX = random(-margin, width + margin);
+          startY = -margin;
+        } else if (edge === 1) {
+          startX = random(-margin, width + margin);
+          startY = height + margin;
+        } else if (edge === 2) {
+          startX = -margin;
+          startY = random(-margin, height + margin);
+        } else {
+          startX = width + margin;
+          startY = random(-margin, height + margin);
+        }
+
+        dreamPieces.push({
+          x: startX, y: startY,
+          startX: startX, startY: startY,
+          targetCenterX: targetCenterX, targetCenterY: targetCenterY,
+          vx: random(-0.5, 0.5), vy: random(-0.5, 0.5),
+          floatAngle: random(TWO_PI), floatSpeed: random(0.008, 0.02),
+          blocks: clusterCells
+        });
+      }
+    }
+  }
+}
+
+function loadPattern(index) {
+  GRID_PATTERN = PATTERNS[index] || PATTERNS[0];
+  ROWS = GRID_PATTERN.length;
+  COLS = GRID_PATTERN[0].length;
+  cellW = width / COLS;
+  cellH = height / ROWS;
+
+  coloredGridArray = new Uint8Array(ROWS * COLS);
+
+  // Reset row offsets when switching patterns
+  rowOffsets = new Array(ROWS).fill(0);
+  targetRowOffsets = new Array(ROWS).fill(0);
+
+  stitches = [];
+  for (let r = 0; r < ROWS; r++) {
+    stitches[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      let targetYellow = GRID_PATTERN[r][c] === 1 ? 1.0 : 0.0;
+      let bx = c * cellW + cellW / 2;
+      let by = r * cellH + cellH / 2;
+
+      stitches[r][c] = {
+        baseX: bx, baseY: by, currX: bx, currY: by,
+        vx: random(-3, 3), vy: random(-3, 3),
+        rippleX: 0, rippleY: 0, 
+        yellowVal: targetYellow,
+        startYellow: targetYellow,
+        targetYellow: targetYellow,
+        startCurrX: bx, startCurrY: by
+      };
+    }
+  }
+}
+
+function switchPattern() {
+  patternIndex = (patternIndex + 1) % PATTERNS.length;
+  let nextPattern = PATTERNS[patternIndex];
+  
+  // Transition smoothly from existing pattern to next pattern
+  sceneState = 'SWITCHING_PATTERN';
+  patternTransitionProgress = 0.0;
+
+  if (coloredGridArray) {
+    coloredGridArray.fill(0);
+  }
+  for (let r = 0; r < ROWS; r++) {
+    rowOffsets[r] = 0;
+    targetRowOffsets[r] = 0;
+  }
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let st = stitches[r][c];
+      
+      // Store current positions and color states as starting point
+      st.startCurrX = st.currX;
+      st.startCurrY = st.currY;
+      st.startYellow = st.yellowVal;
+      
+      // Update target color value based on new pattern
+      st.targetYellow = nextPattern[r][c] === 1 ? 1.0 : 0.0;
+      
+      // Gentle ripple push for organic transition feel
+      let bounceAngle = random(TWO_PI);
+      let bounceForce = random(3, 8);
+      st.vx = cos(bounceAngle) * bounceForce;
+      st.vy = sin(bounceAngle) * bounceForce;
+    }
+  }
+
+  GRID_PATTERN = nextPattern;
+  spawnBackgroundPatternSparkles();
+}
+
+function spawnBackgroundPatternSparkles() {
+  for (let i = 0; i < 45; i++) {
+    let rx = random(width);
+    let ry = random(height);
+    spawnNeonSparkles(rx, ry, 1);
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  cellW = width / COLS;
+  cellH = height / ROWS;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (stitches[r] && stitches[r][c]) {
+        let st = stitches[r][c];
+        st.baseX = c * cellW + cellW / 2;
+        st.baseY = r * cellH + cellH / 2;
+        st.currX = st.baseX;
+        st.currY = st.baseY;
+      }
+    }
+  }
+  for (let i = 0; i < dreamPieces.length; i++) {
+    let piece = dreamPieces[i];
+    let sumX = 0, sumY = 0;
+    for (let pt of piece.blocks) {
+      let tx = pt.c * cellW + cellW / 2;
+      let ty = pt.r * cellH + cellH / 2;
+      pt.offsetX = tx;
+      pt.offsetY = ty;
+      sumX += tx; sumY += ty;
+    }
+    piece.targetCenterX = sumX / piece.blocks.length;
+    piece.targetCenterY = sumY / piece.blocks.length;
+    if (sceneState === 'INTRO_DREAMING') {
+      piece.x = constrain(piece.x, -150, width + 150);
+      piece.y = constrain(piece.y, -150, height + 150);
+    }
+  }
+}
+
+function mousePressed() {
+  let fs = fullscreen();
+  fullscreen(!fs);
+}
+
+function draw() {
+  background(0);
+
+  if (!isHandPresent && handAbsentStartTime > 0) {
+    if (!isTimeoutTriggered && millis() - handAbsentStartTime > NO_HAND_TIMEOUT) {
+      isTimeoutTriggered = true;
+      onHandTimeout();
+    }
+  }
+
+  if (sceneState === 'INTRO_DREAMING') {
+    drawDreamingBackgroundAndPieces(0.0); 
+    if (isHandPresent) {
+      sceneState = 'ASSEMBLING'; 
+      transitionProgress = 0.0;
+      for (let i = 0; i < dreamPieces.length; i++) {
+        dreamPieces[i].startX = dreamPieces[i].x;
+        dreamPieces[i].startY = dreamPieces[i].y;
+      }
+    }
+  } 
+  else if (sceneState === 'ASSEMBLING') {
+    drawDreamingBackgroundAndPieces(transitionProgress); 
+    // Increased speed from 0.08 to 0.16 to make pattern assembly extra fast
+    transitionProgress += 0.16;
+    
+    if (transitionProgress >= 1.0) {
+      sceneState = 'ACTIVE';
+    }
+  } 
+  else if (sceneState === 'SWITCHING_PATTERN') {
+    if (!stitches.length) return;
+
+    // Increased pattern switching transition speed to 0.06
+    patternTransitionProgress += 0.06; 
+    let easeProg = easeInOutCubic(Math.min(patternTransitionProgress, 1.0));
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        let st = stitches[r][c];
+        
+        // Smoothly interpolate colors (yellowVal)
+        st.yellowVal = lerp(st.startYellow, st.targetYellow, easeProg);
+        
+        // Smoothly move beads back towards grid base positions
+        let targetX = (c * cellW + cellW / 2);
+        let targetY = st.baseY;
+        
+        st.currX = lerp(st.startCurrX, targetX, easeProg);
+        st.currY = lerp(st.startCurrY, targetY, easeProg);
+      }
+    }
+
+    drawPatternLayer(1.0);
+    updateAndDrawEffects();
+
+    if (patternTransitionProgress >= 1.0) {
+      sceneState = 'ACTIVE';
+    }
+  }
+  else if (sceneState === 'ACTIVE') {
+    if (!stitches.length) return;
+
+    currentScale = lerp(currentScale, targetScale, 0.1);
+    for (let r = 0; r < ROWS; r++) {
+      rowOffsets[r] = lerp(rowOffsets[r], targetRowOffsets[r], 0.1);
+    }
+
+    handleGestures();
+    drawPatternLayer(1.0);
+    updateAndDrawEffects();
+  }
+  else if (sceneState === 'DISSOLVING') {
+    // Reduced speed from 0.12 to 0.015 for a much slower, smoother ending transition
+    dissolveProgress += 0.015;
+    let alphaMultiplier = constrain(1.0 - dissolveProgress, 0.0, 1.0);
+    
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        let st = stitches[r][c];
+        
+        if (st.scatterVx === undefined) {
+          let scatterAngle = random(TWO_PI);
+          // Reduced scatter speed range to complement the slower dissolution pace
+          let scatterSpeed = random(2, 6);
+          st.scatterVx = cos(scatterAngle) * scatterSpeed;
+          st.scatterVy = sin(scatterAngle) * scatterSpeed;
+        }
+
+        st.currX += st.scatterVx;
+        st.currY += st.scatterVy;
+      }
+    }
+
+    drawPatternLayer(alphaMultiplier);
+    updateAndDrawEffects();
+
+    if (dissolveProgress >= 1.0) {
+      sceneState = 'INTRO_DREAMING';
+      transitionProgress = 0.0;
+      dissolveProgress = 0.0;
+      isExploded = false;
+      
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          let st = stitches[r][c];
+          st.currX = st.baseX;
+          st.currY = st.baseY;
+          st.vx = random(-15, 15);
+          st.vy = random(-15, 15);
+          st.rippleX = 0;
+          st.rippleY = 0;
+          delete st.scatterVx;
+          delete st.scatterVy;
+        }
+      }
+      initDreamingScene();
+    }
+  }
+}
+
+function onHandTimeout() {
+  sceneState = 'DISSOLVING';
+  dissolveProgress = 0.0;
+  
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let st = stitches[r][c];
+      let scatterAngle = random(TWO_PI);
+      let scatterSpeed = random(2, 6);
+      st.scatterVx = cos(scatterAngle) * scatterSpeed;
+      st.scatterVy = sin(scatterAngle) * scatterSpeed;
+    }
+  }
+}
+
+function drawDreamingBackgroundAndPieces(progress) {
+  let easeProg = easeInOutCubic(Math.min(progress, 1.0));
+
+  for (let pIdx = 0; pIdx < dreamPieces.length; pIdx++) {
+    let piece = dreamPieces[pIdx];
+    let currentCenterX, currentCenterY;
+
+    if (sceneState === 'INTRO_DREAMING') {
+      piece.floatAngle += piece.floatSpeed;
+      piece.x += piece.vx + sin(piece.floatAngle) * 0.7;
+      piece.y += piece.vy + cos(piece.floatAngle) * 0.7;
+
+      if (piece.x < -100) piece.x = width + 100;
+      if (piece.x > width + 100) piece.x = -100;
+      if (piece.y < -100) piece.y = height + 100;
+      if (piece.y > height + 100) piece.y = -100;
+
+      currentCenterX = piece.x;
+      currentCenterY = piece.y;
+    } else {
+      currentCenterX = lerp(piece.startX, piece.targetCenterX, easeProg);
+      currentCenterY = lerp(piece.startY, piece.targetCenterY, easeProg);
+    }
+
+    for (let bIdx = 0; bIdx < piece.blocks.length; bIdx++) {
+      let block = piece.blocks[bIdx];
+      let finalX = currentCenterX + (block.offsetX - piece.targetCenterX);
+      let finalY = currentCenterY + (block.offsetY - piece.targetCenterY);
+
+      push();
+      translate(finalX, finalY);
+      let w = cellW * 0.95, h = cellH * 0.85;
+      noStroke();
+      
+      let twinkle = map(sin(frameCount * 0.08 + finalX * 0.05 + finalY * 0.05), -1, 1, 0.7, 1.0);
+      let sliceH = h / 4 + 0.6;
+
+      for (let i = 0; i < 4; i++) {
+        let sd = SLICES_DATA[i];
+        let sliceY = h * sd.pctY;
+        let highlight = sd.highlight;
+
+        let baseYellow = block.isYellow;
+        let rCol = baseYellow ? 200 + 55 * highlight : 180 + 75 * highlight;
+        let gCol = baseYellow ? 180 + 60 * highlight : 30 + 50 * highlight;
+        let bCol = baseYellow ? 30 + 60 * highlight : 30 + 60 * highlight;
+        
+        fill(rCol, gCol, bCol, 240 * twinkle);
+        rectMode(CENTER);
+        rect(0, sliceY, w * sd.wFactor, sliceH, 5);
+      }
+
+      strokeWeight(1.5);
+      if (block.isYellow) {
+        stroke(120, 80, 0, 200);
+      } else {
+        stroke(100, 10, 10, 210);
+      }
+
+      for (let offset = -w * 0.4; offset <= w * 0.4; offset += 10) {
+        beginShape();
+        for (let yPos = -h * 0.35; yPos <= h * 0.35; yPos += 3) {
+          let wave = sin(frameCount * 0.1 + yPos * 0.2 + offset) * 2.5;
+          vertex(offset + wave, yPos);
+        }
+        endShape();
+      }
+      pop();
+    }
+  }
+}
+
+function easeInOutCubic(x) {
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+function drawPatternLayer(alphaMultiplier) {
+  push();
+  translate(width / 2, height / 2);
+  scale(currentScale);
+  translate(-width / 2, -height / 2);
+
+  let alpha255 = 255 * alphaMultiplier;
+
+  for (let r = 0; r < ROWS; r++) {
+    let rowOff = rowOffsets[r] || 0;
+    // Calculate wave displacement specifically based on this row's offset displacement
+    let rowWeaveDisplacement = abs(rowOff);
+
+    for (let c = 0; c < COLS; c++) {
+      let st = stitches[r] ? stitches[r][c] : null;
+      if (!st) continue;
+
+      if (sceneState === 'ACTIVE') {
+        st.yellowVal += (st.targetYellow - st.yellowVal) * 0.35;
+      }
+
+      // Vertical/horizontal wave displacement applied per-row when that specific row is being woven
+      let waveOffsetY = sin(frameCount * 0.15 + c * 0.3 + r * 0.2) * (rowWeaveDisplacement * 0.12);
+      let waveOffsetX = cos(frameCount * 0.12 + r * 0.4) * (rowWeaveDisplacement * 0.08);
+
+      let targetX = (c * cellW + cellW / 2) + rowOff + waveOffsetX;
+      let targetY = st.baseY + waveOffsetY;
+
+      if (isExploded && sceneState === 'ACTIVE') {
+        let dirX = st.currX - explosionCenterX;
+        let dirY = st.currY - explosionCenterY;
+        let len = sqrt(dirX * dirX + dirY * dirY) || 1;
+        
+        st.vx += (dirX / len) * 8.0 * explosionFactor;
+        st.vy += (dirY / len) * 8.0 * explosionFactor;
+        st.currX += st.vx;
+        st.currY += st.vy;
+      }
+
+      let drawX = st.currX + st.rippleX;
+      let drawY = st.currY + st.rippleY;
+
+      if (!isExploded && sceneState === 'ACTIVE') {
+        st.vx += (targetX - st.currX) * 0.35;
+        st.vy += (targetY - st.currY) * 0.35;
+        st.rippleX *= 0.88;
+        st.rippleY *= 0.88;
+        st.vx *= 0.7; st.vy *= 0.7;
+        st.currX += st.vx; st.currY += st.vy;
+        drawX = st.currX + st.rippleX;
+        drawY = st.currY + st.rippleY;
+      }
+
+      if (drawX < -cellW || drawX > width + cellW) continue;
+
+      let flatKey = r * COLS + c;
+      if (sceneState === 'ACTIVE' && isHandPresent) {
+        for (let hIdx = 0; hIdx < activeHands.length; hIdx++) {
+          let hand = activeHands[hIdx];
+          if (hand.gesture === "OK") continue;
+          
+          let dx = drawX - hand.handX;
+          let dy = drawY - hand.handY;
+          if (dx * dx + dy * dy < 32400) {
+            coloredGridArray[flatKey] = 1;
+            break;
+          }
+        }
+      }
+
+      let isTouched = coloredGridArray[flatKey] === 1;
+
+      push();
+      translate(drawX, drawY);
+      let w = cellW * 0.95, h = cellH * 0.85;
+
+      noStroke();
+      let sliceH = h / 4 + 0.6;
+      let yVal = st.yellowVal;
+
+      for (let i = 0; i < 4; i++) {
+        let sd = SLICES_DATA[i];
+        let sliceY = h * sd.pctY;
+        let highlight = sd.highlight;
+
+        let rCol, gCol, bCol;
+        if (isTouched) {
+          let touchedYellR = 60 + 40 * highlight;
+          let touchedYellG = 10 + 20 * highlight;
+          let touchedYellB = 110 + 50 * highlight;
+
+          let touchedBaseR = 20 + 50 * highlight;
+          let touchedBaseG = 120 + 60 * highlight;
+          let touchedBaseB = 230 + 25 * highlight;
+
+          rCol = touchedBaseR + (touchedYellR - touchedBaseR) * yVal;
+          gCol = touchedBaseG + (touchedYellG - touchedBaseG) * yVal;
+          bCol = touchedBaseB + (touchedYellB - touchedBaseB) * yVal;
+        } else {
+          let yellR = 200 + 55 * highlight;
+          let yellG = 180 + 60 * highlight;
+          let yellB = 30 + 60 * highlight;
+
+          let baseR = 180 + 75 * highlight;
+          let baseG = 30 + 50 * highlight;
+          let baseB = 30 + 60 * highlight;
+
+          rCol = baseR + (yellR - baseR) * yVal;
+          gCol = baseG + (yellG - baseG) * yVal;
+          bCol = baseB + (yellB - baseB) * yVal;
+        }
+        
+        fill(rCol, gCol, bCol, alpha255);
+        rectMode(CENTER);
+        rect(0, sliceY, w * sd.wFactor, sliceH, 5);
+      }
+
+      strokeWeight(isTouched ? 1.8 : 1.5);
+      
+      let rS, gS, bS;
+      if (isTouched) {
+        rS = 80 * yVal;
+        gS = 150 - 130 * yVal;
+        bS = 255 - 135 * yVal;
+      } else {
+        rS = 100 + 20 * yVal;
+        gS = 10 + 70 * yVal;
+        bS = 10 - 10 * yVal;
+      }
+
+      stroke(rS, gS, bS, 220 * alphaMultiplier);
+      noFill();
+
+      // Dynamic waviness calculations based strictly on row-specific offset
+      let waveAmp = 2.5 + Math.min(abs(rowOff) * 0.15, 12);
+      let waveFreq = 0.1 + Math.min(abs(rowOff) * 0.002, 0.15);
+
+      for (let offset = -w * 0.4; offset <= w * 0.4; offset += 10) {
+        beginShape();
+        for (let yPos = -h * 0.35; yPos <= h * 0.35; yPos += 3) {
+          // Only animate waves on lines touched; untouched lines remain straight
+          let wave = isTouched ? sin(frameCount * waveFreq + yPos * 0.2 + offset + r) * waveAmp : 0;
+          vertex(offset + wave, yPos);
+        }
+        endShape();
+      }
+      pop();
+    }
+  }
+  pop();
+}
+
+function handleGestures() {
+  if (isHandPresent) {
+    let anyFist = false;
+    let fistHand = null;
+
+    for (let i = 0; i < activeHands.length; i++) {
+      let hand = activeHands[i];
+      if (hand.gesture === "Fist") {
+        anyFist = true;
+        fistHand = hand;
+        spawnNeonSparkles(hand.handX, hand.handY, 15);
+        for (let s = 0; s < 5; s++) {
+          spawnNeonSparkles(random(width), random(height), 2);
+        }
+      } else if (hand.gesture === "Open") {
+        if (hand.lastGesture === "Fist") {
+          switchPattern();
+        } else {
+          applyRipples(hand.handX, hand.handY);
+          spawnNeonSparkles(hand.handX, hand.handY, 2);
+        }
+      } else if (hand.gesture === "OK") {
+        dragAndWeaveRow(hand.pinchX, hand.pinchY);
+        spawnNeonSparkles(hand.pinchX, hand.pinchY, 3);
+      }
+      hand.lastGesture = hand.gesture;
+    }
+
+    if (anyFist && fistHand) {
+      isExploded = true;
+      explosionCenterX = fistHand.handX;
+      explosionCenterY = fistHand.handY;
+
+      let centerDist = dist(fistHand.handX, fistHand.handY, width / 2, height / 2);
+      let maxDist = dist(0, 0, width / 2, height / 2);
+      explosionFactor = map(centerDist, 0, maxDist, 0.5, 2.8);
+    } else {
+      isExploded = false;
+    }
+  } else {
+    isExploded = mouseIsPressed;
+    if (mouseIsPressed && !mouseButton) {
+      explosionCenterX = mouseX;
+      explosionCenterY = mouseY;
+      let centerDist = dist(mouseX, mouseY, width / 2, height / 2);
+      let maxDist = dist(0, 0, width / 2, height / 2);
+      explosionFactor = map(centerDist, 0, maxDist, 0.5, 2.8);
+
+      spawnNeonSparkles(mouseX, mouseY, 15);
+      for (let s = 0; s < 5; s++) {
+        spawnNeonSparkles(random(width), random(height), 2);
+      }
+    }
+  }
+}
+
+function dragAndWeaveRow(px, py) {
+  let adjustedX = (px - width / 2) / currentScale + width / 2;
+  let adjustedY = (py - height / 2) / currentScale + height / 2;
+  let targetRow = floor(adjustedY / cellH);
+  if (targetRow >= 0 && targetRow < ROWS) {
+    targetRowOffsets[targetRow] = (adjustedX - width / 2) * 0.4;
+  }
+}
+
+function applyRipples(hx, hy) {
+  let adjustedHX = (hx - width / 2) / currentScale + width / 2;
+  let adjustedHY = (hy - height / 2) / currentScale + height / 2;
+  if (frameCount % 15 === 0) shockwaves.push({ x: hx, y: hy, r: 10, alpha: 255 });
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let st = stitches[r] ? stitches[r][c] : null;
+      if (!st) continue;
+      
+      let dx = st.currX - adjustedHX;
+      let dy = st.currY - adjustedHY;
+      let d2 = dx * dx + dy * dy;
+
+      if (d2 < 40000) {
+        let d = sqrt(d2);
+        let force = (1 - d / 200) * 30;
+        let invD = d > 0 ? 1 / d : 0;
+        st.rippleX += dx * invD * force * 0.6;
+        st.rippleY += dy * invD * force * 0.6;
+      }
+    }
+  }
+}
+
+function spawnNeonSparkles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    sparkParticles.push({
+      x: x + random(-40, 40), y: y + random(-40, 40),
+      vx: random(-8, 8), vy: random(-8, 8),
+      alpha: 255,
+      colR: random() > 0.5 ? 200 : 100,
+      colG: random() > 0.5 ? 120 : 200,
+      colB: 255,
+      size: random(3, 7)
+    });
+  }
+}
+
+function updateAndDrawEffects() {
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    let sw = shockwaves[i];
+    noFill();
+    stroke(170, 120, 255, sw.alpha);
+    strokeWeight(2);
+    ellipse(sw.x, sw.y, sw.r * 2);
+    sw.r += 10;
+    sw.alpha -= 12;
+    if (sw.alpha <= 0) shockwaves.splice(i, 1);
+  }
+  for (let i = sparkParticles.length - 1; i >= 0; i--) {
+    let sp = sparkParticles[i];
+    noStroke();
+    fill(sp.colR, sp.colG, sp.colB, sp.alpha);
+    ellipse(sp.x, sp.y, sp.size);
+    sp.x += sp.vx; sp.y += sp.vy;
+    sp.vx *= 0.95; sp.vy *= 0.95;
+    sp.alpha -= 10;
+    if (sp.alpha <= 0) sparkParticles.splice(i, 1);
+  }
+}
+
+function initCustomMediaPipe() {
+  videoElement = document.getElementById('webcam-video');
+  hands = new Hands({ 
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` 
+  });
+  
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+  
+  hands.onResults((results) => {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      isHandPresent = true;
+      handAbsentStartTime = 0;
+      isTimeoutTriggered = false;
+      
+      let newActiveHands = [];
+      for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+        let lm = results.multiHandLandmarks[i];
+        let hX = (1 - lm[9].x) * width;
+        let hY = lm[9].y * height;
+        let pX = (1 - (lm[4].x + lm[8].x) / 2) * width;
+        let pY = ((lm[4].y + lm[8].y) / 2) * height;
+
+        let pinchDist = dist(lm[4].x, lm[4].y, lm[8].x, lm[8].y);
+        let openFingers = (lm[8].y < lm[6].y ? 1 : 0) + (lm[12].y < lm[10].y ? 1 : 0) + 
+                         (lm[16].y < lm[14].y ? 1 : 0) + (lm[20].y < lm[18].y ? 1 : 0);
+
+        let gesture = pinchDist < 0.055 && openFingers >= 2 ? "OK" :
+                      openFingers >= 3 ? "Open" :
+                      openFingers <= 1 ? "Fist" : "None";
+
+        let prevHand = activeHands[i] || {};
+        newActiveHands.push({
+          handX: hX,
+          handY: hY,
+          pinchX: pX,
+          pinchY: pY,
+          gesture: gesture,
+          lastGesture: prevHand.gesture || "None"
+        });
+      }
+      activeHands = newActiveHands;
+    } else {
+      if (isHandPresent) {
+        handAbsentStartTime = millis();
+      }
+      isHandPresent = false;
+      activeHands = [];
+    }
+  });
+
+  cameraUtils = new Camera(videoElement, {
+    onFrame: async () => {
+      if (isProcessingFrame) return;
+      isProcessingFrame = true;
+      try {
+        await hands.send({ image: videoElement });
+      } catch (err) {
+        console.error("MediaPipe error:", err);
+      }
+      isProcessingFrame = false;
+    },
+    width: 640,
+    height: 480
+  });
+  
+  cameraUtils.start().catch((err) => {
+    console.error("Camera access error:", err);
+  });
+}
+</script>
+
+</body>
+</html>
