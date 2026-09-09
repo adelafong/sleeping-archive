@@ -21,13 +21,13 @@
     <div class="gate-panel">
       <div class="gate-kicker">Sleeping Archive / Visitor Entry</div>
       <h1 class="gate-title" id="gateTitle">Enter the<br>Archive.</h1>
-      <p class="gate-copy">Before entering, please leave a few details to help us understand where our audience is joining from.</p>
+      <p class="gate-copy">Before entering, please leave a few details to help us understand our audience.</p>
       <form class="visitor-form" id="visitorForm" name="visitor-log" method="POST" data-netlify="true" netlify-honeypot="bot-field">
         <input type="hidden" name="form-name" value="visitor-log" />
         <p hidden><label>Do not fill this out: <input name="bot-field" /></label></p>
         <div class="field"><label for="visitorName">Name</label><input id="visitorName" name="name" type="text" autocomplete="name" required /></div>
         <div class="field"><label for="visitorEmail">Email</label><input id="visitorEmail" name="email" type="email" autocomplete="email" required /></div>
-        <div class="field full"><label for="visitorOrigin">Where are you from?</label><input id="visitorOrigin" name="origin" type="text" placeholder="City / Country" required /></div>
+        <div class="field full"><label for="visitorOrganisation">Organisation</label><input id="visitorOrganisation" name="organisation" type="text" autocomplete="organization" placeholder="University / Company / Organisation" required /></div>
         <label class="consent-row"><input type="checkbox" name="consent" value="yes" required /><span>I agree that these details may be recorded for audience research related to Sleeping Archive.</span></label>
         <button class="gate-submit" id="gateSubmit" type="submit">Enter Sleeping Archive</button>
         <p class="gate-note">Your details are collected only for audience-engagement records.</p>
@@ -58,8 +58,7 @@
       gateSubmit.textContent='Entering...';
       gateStatus.textContent='';
       const params=new URLSearchParams(new FormData(visitorForm));
-      fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params.toString(),keepalive:true})
-        .catch(()=>{});
+      fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params.toString(),keepalive:true}).catch(()=>{});
       openArchive();
     });
   </script>
