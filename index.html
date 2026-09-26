@@ -22,17 +22,17 @@
       <div class="gate-kicker">Sleeping Archive / Visitor Entry</div>
       <h1 class="gate-title" id="gateTitle">Enter the<br>Archive.</h1>
       <p class="gate-copy">You may register to help us understand our audience, or continue without registering.</p>
-      <form class="visitor-form" id="visitorForm" name="visitor-log" method="POST" data-netlify="true" netlify-honeypot="bot-field">
+      <form class="visitor-form" id="visitorForm" name="visitor-log" method="POST" action="/api/visitors">
         <input type="hidden" name="form-name" value="visitor-log" />
         <input type="hidden" name="registration_status" value="registered" />
         <p hidden><label>Do not fill this out: <input name="bot-field" /></label></p>
-        <div class="field"><label for="visitorName">Name</label><input id="visitorName" name="name" type="text" autocomplete="name" required /></div>
-        <div class="field"><label for="visitorEmail">Email</label><input id="visitorEmail" name="email" type="email" autocomplete="email" required /></div>
-        <div class="field full"><label for="visitorOrganisation">Organisation</label><input id="visitorOrganisation" name="organisation" type="text" autocomplete="organization" placeholder="University / Company / Organisation" required /></div>
+        <div class="field"><label for="visitorName">Name</label><input id="visitorName" name="name" type="text" autocomplete="name" maxlength="120" required /></div>
+        <div class="field"><label for="visitorEmail">Email</label><input id="visitorEmail" name="email" type="email" autocomplete="email" maxlength="254" required /></div>
+        <div class="field full"><label for="visitorOrganisation">Organisation</label><input id="visitorOrganisation" name="organisation" type="text" autocomplete="organization" maxlength="200" placeholder="University / Company / Organisation" required /></div>
         <label class="consent-row"><input type="checkbox" name="consent" value="yes" required /><span>I agree that these details may be recorded for audience research related to Sleeping Archive.</span></label>
         <button class="gate-submit" id="gateSubmit" type="submit">Enter Sleeping Archive</button>
         <button class="gate-skip" id="gateSkip" type="button">Continue without registering</button>
-        <p class="gate-note">Registration details are collected only for audience-engagement records. If you continue without registering, no name or email is collected.</p>
+        <p class="gate-note">With your consent, your name, email, organisation and registration time will be stored for Sleeping Archive audience research. You can continue without sharing any details.</p>
         <div class="gate-status" id="gateStatus" aria-live="polite"></div>
       </form>
     </div>
@@ -64,26 +64,49 @@
     const gateSkip=document.getElementById('gateSkip');
     const gateStatus=document.getElementById('gateStatus');
     function openArchive(){gate.hidden=true;document.body.classList.remove('gated');try{sessionStorage.setItem('sleepingArchiveVisitorEntered','1')}catch(e){}}
-    function sendLog(params){fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params.toString(),keepalive:true}).catch(()=>{});}
+    let pendingSubmission = null;
     try{if(sessionStorage.getItem('sleepingArchiveVisitorEntered')==='1')openArchive()}catch(e){}
-    visitorForm.addEventListener('submit',(e)=>{
+    visitorForm.addEventListener('submit', async (e)=>{
       e.preventDefault();
-      if(!visitorForm.reportValidity())return;
+      if(gateSubmit.disabled || !visitorForm.reportValidity())return;
+      const form = new FormData(visitorForm);
+      const details = {
+        name: String(form.get('name') || '').trim(),
+        email: String(form.get('email') || '').trim(),
+        organisation: String(form.get('organisation') || '').trim(),
+        consent: form.get('consent') === 'yes',
+        website: String(form.get('bot-field') || '')
+      };
+      const fingerprint = JSON.stringify(details);
+      if(!pendingSubmission || pendingSubmission.fingerprint !== fingerprint) {
+        pendingSubmission = { fingerprint, id: crypto.randomUUID() };
+      }
       gateSubmit.disabled=true;
-      gateSubmit.textContent='Entering...';
+      gateSubmit.textContent='Saving registration...';
       gateStatus.textContent='';
-      sendLog(new URLSearchParams(new FormData(visitorForm)));
-      openArchive();
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(),15000);
+      try {
+        const response = await fetch('/api/visitors', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({...details, id:pendingSubmission.id}), signal:controller.signal
+        });
+        const result = await response.json().catch(()=>({}));
+        if(!response.ok || result.ok !== true) throw new Error(result.error || 'Registration is currently unavailable. Please retry or continue without registering.');
+        visitorForm.reset();
+        pendingSubmission=null;
+        openArchive();
+      } catch(error) {
+        gateStatus.textContent = error.name === 'AbortError'
+          ? 'We could not confirm your registration. Please retry or continue without registering.'
+          : (error.message === 'Failed to fetch' ? 'Unable to connect. Please retry or continue without registering.' : error.message);
+      } finally {
+        clearTimeout(timeout);
+        gateSubmit.disabled=false;
+        gateSubmit.textContent='Enter Sleeping Archive';
+      }
     });
-    gateSkip.addEventListener('click',()=>{
-      gateSkip.disabled=true;
-      gateSkip.textContent='Entering...';
-      const params=new URLSearchParams();
-      params.set('form-name','visitor-log');
-      params.set('registration_status','skipped');
-      sendLog(params);
-      openArchive();
-    });
+    gateSkip.addEventListener('click',()=>{ visitorForm.reset(); openArchive(); });
   </script>
 </body>
 </html>
